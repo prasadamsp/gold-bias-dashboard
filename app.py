@@ -8,6 +8,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Inject Streamlit Cloud secret into environment so data_fetcher can read it
+try:
+    if not os.getenv("FRED_API_KEY") and "FRED_API_KEY" in st.secrets:
+        os.environ["FRED_API_KEY"] = st.secrets["FRED_API_KEY"]
+except Exception:
+    pass
+
 st.set_page_config(
     page_title="Gold Weekly Bias Dashboard",
     page_icon="",
