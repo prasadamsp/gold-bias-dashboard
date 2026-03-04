@@ -235,8 +235,13 @@ def calc_macro_snapshot(prices: dict, fred: dict) -> dict:
     dxy_close = prices.get("dxy", pd.DataFrame()).get("Close", pd.Series())
 
     # 2Y and 10Y from FRED (daily, resample to weekly)
-    t2y = fred.get("treasury_2y", pd.Series()).resample("W").last()
-    t10y = fred.get("treasury_10y", pd.Series()).resample("W").last()
+    def _resample_weekly(s: pd.Series) -> pd.Series:
+        if s.empty or not isinstance(s.index, pd.DatetimeIndex):
+            return pd.Series(dtype=float)
+        return s.resample("W").last()
+
+    t2y  = _resample_weekly(fred.get("treasury_2y",  pd.Series()))
+    t10y = _resample_weekly(fred.get("treasury_10y", pd.Series()))
 
     t2y_val  = last(t2y)
     t10y_val = last(t10y)
