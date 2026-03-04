@@ -71,14 +71,17 @@ import config
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=3600, show_spinner="Fetching market data...")
-def load_data():
+def load_data(fred_key: str = ""):
+    if fred_key:
+        os.environ["FRED_API_KEY"] = fred_key
     return data_fetcher.fetch_all_data()
 
 
 def get_data(force_refresh: bool = False):
+    fred_key = os.getenv("FRED_API_KEY", "")
     if force_refresh:
         st.cache_data.clear()
-    return load_data()
+    return load_data(fred_key=fred_key)
 
 
 # ---------------------------------------------------------------------------
