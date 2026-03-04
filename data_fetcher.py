@@ -97,33 +97,36 @@ def fetch_etf_shares_outstanding() -> dict[str, float | None]:
 
 def fetch_fred_series(years: int = config.PRICE_HISTORY_YEARS, api_key: str = "") -> dict[str, pd.Series]:
     """
-    Download FRED series using the fredapi library.
+    Download FRED series via direct REST API (no fredapi library needed).
     Falls back gracefully if FRED_API_KEY is missing.
     """
     api_key = api_key or _get_fred_key()
     result = {}
 
     if not api_key:
-        # Return empty series so dashboard still loads without FRED key
         for k in config.FRED_SERIES:
             result[k] = pd.Series(dtype=float, name=k)
         return result
 
-    try:
-        from fredapi import Fred
-        fred = Fred(api_key=api_key)
-        start = _years_ago(years)
-        for key, series_id in config.FRED_SERIES.items():
-            try:
-                s = fred.get_series(series_id, observation_start=start)
-                s.index = pd.to_datetime(s.index).tz_localize(None)
-                s.name = key
-                result[key] = s.dropna()
-            except Exception:
-                result[key] = pd.Series(dtype=float, name=key)
-    except ImportError:
-        for k in config.FRED_SERIES:
-            result[k] = pd.Series(dtype=float, name=k)
+    start = _years_ago(years)
+    base_url = "https://api.stlouisfed.org/fred/series/observations"
+
+    for key, series_id in config.FRED_SERIES.items():
+        try:
+            resp = requests.get(base_url, params={
+                "series_id":         series_id,
+                "api_key":           api_key,
+                "file_type":         "json",
+                "observation_start": start,
+            }, timeout=15)
+            resp.raise_for_status()
+            obs = resp.json().get("observations", [])
+            dates  = [o["date"] for o in obs]
+            values = [float(o["value"]) if o["value"] != "." else float("nan") for o in obs]
+            s = pd.Series(values, index=pd.to_datetime(dates), name=key).dropna()
+            result[key] = s
+        except Exception:
+            result[key] = pd.Series(dtype=float, name=key)
 
     return result
 
