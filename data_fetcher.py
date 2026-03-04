@@ -195,13 +195,13 @@ def fetch_cot_gold(years: int = config.COT_HISTORICAL_YEARS) -> pd.DataFrame:
     combined["date"] = pd.to_datetime(combined[date_col], errors="coerce")
     combined = combined.dropna(subset=["date"]).sort_values("date")
 
-    # Column mapping (legacy report column names)
+    # Column mapping (disaggregated report — Money Manager = speculators)
     col_map = {
-        "NonComm_Positions_Long_All":  "noncomm_long",
-        "NonComm_Positions_Short_All": "noncomm_short",
-        "Comm_Positions_Long_All":     "comm_long",
-        "Comm_Positions_Short_All":    "comm_short",
-        "Open_Interest_All":           "open_interest",
+        "M_Money_Positions_Long_All":  "noncomm_long",
+        "M_Money_Positions_Short_All": "noncomm_short",
+        "Prod_Merc_Positions_Long_All":  "comm_long",
+        "Prod_Merc_Positions_Short_All": "comm_short",
+        "Open_Interest_All":             "open_interest",
     }
 
     out = combined[["date"] + [c for c in col_map if c in combined.columns]].copy()

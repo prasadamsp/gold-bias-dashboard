@@ -59,7 +59,7 @@ FRED_SERIES = {
 # ---------------------------------------------------------------------------
 COT_GOLD_CODE = "088691"
 COT_REPORT_URL_TEMPLATE = (
-    "https://www.cftc.gov/files/dea/history/fut_fin_txt_{year}.zip"
+    "https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip"
 )
 COT_HISTORICAL_YEARS = 2   # years of COT history to download for percentile calc
 
