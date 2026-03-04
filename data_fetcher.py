@@ -22,8 +22,8 @@ def _get_fred_key() -> str:
     if not key:
         try:
             import streamlit as st
-            key = st.secrets.get("FRED_API_KEY", "")
-        except Exception:
+            key = st.secrets["FRED_API_KEY"]
+        except (KeyError, FileNotFoundError, Exception):
             pass
     return key
 
