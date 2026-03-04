@@ -225,8 +225,13 @@ def chart_real_yield(fred: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 def chart_yield_curve(fred: dict) -> go.Figure:
-    t2  = fred.get("treasury_2y",  pd.Series()).resample("W").last()
-    t10 = fred.get("treasury_10y", pd.Series()).resample("W").last()
+    def _safe_resample(s: pd.Series) -> pd.Series:
+        if s.empty or not isinstance(s.index, pd.DatetimeIndex):
+            return pd.Series(dtype=float)
+        return s.resample("W").last()
+
+    t2  = _safe_resample(fred.get("treasury_2y",  pd.Series()))
+    t10 = _safe_resample(fred.get("treasury_10y", pd.Series()))
 
     if t2.empty or t10.empty:
         fig = go.Figure()
