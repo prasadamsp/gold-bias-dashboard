@@ -95,12 +95,12 @@ def fetch_etf_shares_outstanding() -> dict[str, float | None]:
 # FRED API
 # ---------------------------------------------------------------------------
 
-def fetch_fred_series(years: int = config.PRICE_HISTORY_YEARS) -> dict[str, pd.Series]:
+def fetch_fred_series(years: int = config.PRICE_HISTORY_YEARS, api_key: str = "") -> dict[str, pd.Series]:
     """
     Download FRED series using the fredapi library.
     Falls back gracefully if FRED_API_KEY is missing.
     """
-    api_key = _get_fred_key()
+    api_key = api_key or _get_fred_key()
     result = {}
 
     if not api_key:
@@ -218,7 +218,7 @@ def fetch_cot_gold(years: int = config.COT_HISTORICAL_YEARS) -> pd.DataFrame:
 # Aggregate fetch — single call that returns everything
 # ---------------------------------------------------------------------------
 
-def fetch_all_data() -> dict:
+def fetch_all_data(fred_key: str = "") -> dict:
     """
     Master fetcher. Returns:
     {
@@ -231,7 +231,7 @@ def fetch_all_data() -> dict:
     """
     prices = fetch_weekly_prices()
     etf_shares = fetch_etf_shares_outstanding()
-    fred = fetch_fred_series()
+    fred = fetch_fred_series(api_key=fred_key)
     cot = fetch_cot_gold()
 
     return {

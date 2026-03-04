@@ -8,12 +8,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Inject Streamlit Cloud secret into environment so data_fetcher can read it
-try:
-    if not os.getenv("FRED_API_KEY") and "FRED_API_KEY" in st.secrets:
-        os.environ["FRED_API_KEY"] = st.secrets["FRED_API_KEY"]
-except Exception:
-    pass
+
+def _get_fred_key() -> str:
+    """Read FRED key from .env (local) or Streamlit secrets (cloud)."""
+    key = os.getenv("FRED_API_KEY", "")
+    if not key:
+        try:
+            key = str(st.secrets["FRED_API_KEY"])
+        except Exception:
+            key = ""
+    return key
 
 st.set_page_config(
     page_title="Gold Weekly Bias Dashboard",
@@ -72,13 +76,11 @@ import config
 
 @st.cache_data(ttl=3600, show_spinner="Fetching market data...")
 def load_data(fred_key: str = ""):
-    if fred_key:
-        os.environ["FRED_API_KEY"] = fred_key
-    return data_fetcher.fetch_all_data()
+    return data_fetcher.fetch_all_data(fred_key=fred_key)
 
 
 def get_data(force_refresh: bool = False):
-    fred_key = os.getenv("FRED_API_KEY", "")
+    fred_key = _get_fred_key()
     if force_refresh:
         st.cache_data.clear()
     return load_data(fred_key=fred_key)
