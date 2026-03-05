@@ -316,6 +316,183 @@ def chart_bias_gauge(score: float, label: str, color: str) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
+# ICT Levels Chart — Daily candlestick with FVG/OB/Fibonacci overlays
+# ---------------------------------------------------------------------------
+
+def chart_ict_levels(daily_df, weekly_df, trades: list, key_levels: dict,
+                     fvgs: list, obs: list, fib: dict) -> go.Figure:
+    """
+    Daily candlestick chart for gold with ICT overlays:
+      - Shaded Fair Value Gap zones (bullish = blue, bearish = orange)
+      - Shaded Order Block zones   (bullish = green, bearish = red)
+      - Fibonacci level lines
+      - Key level lines (PWH, PWL, PMH, PML, CMH, CML)
+      - Trade entry / stop / target levels for all 3 trades
+    """
+    if daily_df is None or daily_df.empty or "High" not in daily_df.columns:
+        fig = go.Figure()
+        fig.add_annotation(text="ICT chart data unavailable", xref="paper", yref="paper",
+                           x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_COLOR, size=14))
+        _apply_layout(fig, title="ICT Levels — Daily Gold (GC=F)", height=550)
+        return fig
+
+    # ── 1. Candlestick base ───────────────────────────────────────────────
+    fig = go.Figure(data=[go.Candlestick(
+        x=daily_df.index,
+        open=daily_df["Open"],
+        high=daily_df["High"],
+        low=daily_df["Low"],
+        close=daily_df["Close"],
+        name="Gold (Daily)",
+        increasing_line_color=BULL_COLOR,
+        decreasing_line_color=BEAR_COLOR,
+        increasing_fillcolor=BULL_COLOR,
+        decreasing_fillcolor=BEAR_COLOR,
+    )])
+
+    x_end = daily_df.index[-1]   # right edge for all horizontal zones
+
+    # ── 2. FVG shaded zones ───────────────────────────────────────────────
+    for fvg in fvgs[:8]:   # cap at 8 most recent to keep chart clean
+        color = ("rgba(30,100,255,0.15)" if fvg["direction"] == "bullish"
+                 else "rgba(255,120,0,0.15)")
+        border = ("rgba(30,100,255,0.5)" if fvg["direction"] == "bullish"
+                  else "rgba(255,120,0,0.5)")
+        label = f"{'Bull' if fvg['direction'] == 'bullish' else 'Bear'} FVG"
+        x0 = fvg["date"]
+        # Clip x0 to the daily chart range if the FVG is from weekly data (older)
+        if hasattr(daily_df.index[0], 'date') and hasattr(x0, 'date'):
+            if x0 < daily_df.index[0]:
+                x0 = daily_df.index[0]
+        fig.add_shape(
+            type="rect",
+            x0=x0, x1=x_end,
+            y0=fvg["bottom"], y1=fvg["top"],
+            fillcolor=color,
+            line=dict(color=border, width=1),
+            layer="below",
+        )
+        fig.add_annotation(
+            x=x_end, y=fvg["midpoint"],
+            text=label, showarrow=False,
+            xanchor="right", yanchor="middle",
+            font=dict(size=8, color=border),
+        )
+
+    # ── 3. Order Block shaded zones ───────────────────────────────────────
+    for ob in obs[:6]:   # cap at 6 most recent
+        color = ("rgba(0,200,83,0.12)" if ob["direction"] == "bullish"
+                 else "rgba(213,0,0,0.12)")
+        border = ("rgba(0,200,83,0.45)" if ob["direction"] == "bullish"
+                  else "rgba(213,0,0,0.45)")
+        label = f"{'Bull' if ob['direction'] == 'bullish' else 'Bear'} OB"
+        x0 = ob["date"]
+        if hasattr(daily_df.index[0], 'date') and hasattr(x0, 'date'):
+            if x0 < daily_df.index[0]:
+                x0 = daily_df.index[0]
+        fig.add_shape(
+            type="rect",
+            x0=x0, x1=x_end,
+            y0=ob["low"], y1=ob["high"],
+            fillcolor=color,
+            line=dict(color=border, width=1),
+            layer="below",
+        )
+        fig.add_annotation(
+            x=x_end, y=(ob["high"] + ob["low"]) / 2,
+            text=label, showarrow=False,
+            xanchor="right", yanchor="middle",
+            font=dict(size=8, color=border),
+        )
+
+    # ── 4. Fibonacci lines ────────────────────────────────────────────────
+    fib_styles = {
+        0.236: ("#888888", "dot"),
+        0.382: ("#AAAAAA", "dot"),
+        0.500: (NEUTRAL_COLOR,  "dash"),
+        0.618: (BULL_COLOR,     "dash"),
+        0.705: ("#40C4FF",      "dash"),
+        0.786: ("#CE93D8",      "dot"),
+    }
+    for level, (color, dash) in fib_styles.items():
+        price = fib.get(level)
+        if price is None:
+            continue
+        fig.add_hline(
+            y=price,
+            line=dict(color=color, dash=dash, width=1),
+            annotation_text=f"Fib {level:.3f} ${price:,.1f}",
+            annotation_position="left",
+            annotation_font=dict(size=8, color=color),
+        )
+
+    # ── 5. Key level lines ────────────────────────────────────────────────
+    kl_styles = {
+        "PWH": (GOLD_COLOR,    "solid", 1.5, "PWH"),
+        "PWL": (GOLD_COLOR,    "solid", 1.5, "PWL"),
+        "PMH": ("#FF6D00",     "dash",  1.5, "PMH"),
+        "PML": ("#FF6D00",     "dash",  1.5, "PML"),
+        "CMH": ("#40C4FF",     "dot",   1.0, "CMH"),
+        "CML": ("#40C4FF",     "dot",   1.0, "CML"),
+        "CWH": ("#88CCFF",     "dot",   1.0, "CWH"),
+        "CWL": ("#88CCFF",     "dot",   1.0, "CWL"),
+    }
+    for kl_key, (color, dash, width, label) in kl_styles.items():
+        price = key_levels.get(kl_key)
+        if price is None:
+            continue
+        fig.add_hline(
+            y=price,
+            line=dict(color=color, dash=dash, width=width),
+            annotation_text=f"{label} ${price:,.1f}",
+            annotation_position="right",
+            annotation_font=dict(size=8, color=color),
+        )
+
+    # ── 6. Trade entry / stop / target lines ─────────────────────────────
+    trade_colors = ["#FFFFFF", GOLD_COLOR, "#CE93D8"]   # T1=white, T2=gold, T3=purple
+    for trade in trades:
+        if trade["direction"] == "WAIT":
+            continue
+        tid   = trade["id"] - 1
+        color = trade_colors[tid] if tid < len(trade_colors) else "#AAAAAA"
+        prefix = f"T{trade['id']}"
+
+        for price, suffix, dash in [
+            (trade.get("entry"),  "Entry", "solid"),
+            (trade.get("stop"),   "Stop",  "dash"),
+            (trade.get("target1"),"TP1",   "dot"),
+            (trade.get("target2"),"TP2",   "dot"),
+        ]:
+            if price is None:
+                continue
+            fig.add_hline(
+                y=price,
+                line=dict(color=color, dash=dash, width=1),
+                annotation_text=f"{prefix} {suffix} ${price:,.1f}",
+                annotation_position="left",
+                annotation_font=dict(size=8, color=color),
+            )
+
+    _apply_layout(
+        fig,
+        title="ICT Levels — Daily Gold (GC=F)",
+        height=560,
+        xaxis=dict(
+            rangeslider=dict(visible=False),
+            type="date",
+            gridcolor=GRID_COLOR,
+        ),
+        yaxis=dict(
+            gridcolor=GRID_COLOR,
+            tickprefix="$",
+            zeroline=False,
+        ),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Score breakdown bar chart
 # ---------------------------------------------------------------------------
 

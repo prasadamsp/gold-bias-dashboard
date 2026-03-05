@@ -63,8 +63,11 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 # Imports (after page config)
 # ---------------------------------------------------------------------------
+import pandas as pd
+
 import charts
 import data_fetcher
+import ict_analysis
 import indicators
 import scoring
 import config
@@ -468,6 +471,128 @@ def main():
 
     fig_cross = charts.chart_cross_asset(data["prices"])
     st.plotly_chart(fig_cross, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════════════
+    # SECTION 7: ICT TRADE IDEAS
+    # ════════════════════════════════════════════════════════════════════
+    st.markdown("### ICT Trade Ideas (Daily)")
+    st.caption(
+        "Educational ICT analysis only — not financial advice. "
+        "Concepts applied: Market Structure · Order Blocks · Fair Value Gaps · Fibonacci OTE (0.618–0.705) · Key Levels"
+    )
+
+    monthly_df_ict = data.get("monthly_gold", pd.DataFrame())
+    weekly_df_ict  = data.get("weekly_gold",  pd.DataFrame())
+    daily_df_ict   = data.get("daily_gold",   pd.DataFrame())
+
+    if monthly_df_ict.empty or weekly_df_ict.empty or daily_df_ict.empty:
+        st.warning("ICT data unavailable — price DataFrames not loaded. Click Refresh Data.")
+    else:
+        with st.spinner("Running ICT analysis..."):
+            ict_trades     = ict_analysis.generate_ict_trades(
+                monthly_df_ict, weekly_df_ict, daily_df_ict, bias["score"])
+            ict_key_levels = ict_analysis.get_key_levels(monthly_df_ict, weekly_df_ict)
+            sh, sl, _      = ict_analysis._find_major_swing(weekly_df_ict)
+            ict_fib        = ict_analysis.calc_fibonacci_levels(sh, sl)
+            all_fvgs       = (
+                [f for f in ict_analysis.find_fvgs(weekly_df_ict) if not f["filled"]] +
+                [f for f in ict_analysis.find_fvgs(daily_df_ict)  if not f["filled"]]
+            )
+            all_obs        = (
+                [o for o in ict_analysis.find_order_blocks(weekly_df_ict) if o["valid"]] +
+                [o for o in ict_analysis.find_order_blocks(daily_df_ict)  if o["valid"]]
+            )
+
+        # ── Key levels summary row ─────────────────────────────────────
+        kl = ict_key_levels
+        kl1, kl2, kl3, kl4 = st.columns(4)
+        with kl1:
+            metric_card("Prev Month High (PMH)", _fmt(kl.get("PMH"), 1))
+        with kl2:
+            metric_card("Prev Month Low (PML)",  _fmt(kl.get("PML"), 1))
+        with kl3:
+            metric_card("Prev Week High (PWH)",  _fmt(kl.get("PWH"), 1))
+        with kl4:
+            metric_card("Prev Week Low (PWL)",   _fmt(kl.get("PWL"), 1))
+
+        # Fibonacci summary
+        if ict_fib:
+            fifty = ict_fib.get(0.5)
+            ote_l = ict_fib.get(0.618)
+            ote_h = ict_fib.get(0.705)
+            current_gold = ind.get("gold_price")
+            zone_label = ""
+            if current_gold and fifty:
+                zone_label = "🔵 Discount Zone" if current_gold < fifty else "🔴 Premium Zone"
+            st.markdown(
+                f"<div style='font-size:12px; color:#888; margin: 4px 0 12px 0;'>"
+                f"Swing: ${_fmt(ict_fib.get('swing_low'), 1)} → ${_fmt(ict_fib.get('swing_high'), 1)} &nbsp;|&nbsp; "
+                f"50% (mid): <strong style='color:#FFD740;'>${_fmt(fifty, 1)}</strong> &nbsp;|&nbsp; "
+                f"OTE Zone: ${_fmt(ote_h, 1)} – ${_fmt(ote_l, 1)} &nbsp;|&nbsp; {zone_label}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        # ── 3 Trade Cards ─────────────────────────────────────────────
+        tc1, tc2, tc3 = st.columns(3)
+        trade_titles = [
+            "Trade 1 — Primary Trend",
+            "Trade 2 — OTE Retracement",
+            "Trade 3 — Liquidity Hunt",
+        ]
+        for col, trade, title in zip([tc1, tc2, tc3], ict_trades, trade_titles):
+            d = trade["direction"]
+            badge_color = "#00C853" if d == "LONG" else ("#D50000" if d == "SHORT" else "#FFD740")
+            conf_color  = (
+                "#00C853" if trade["confidence"] == "HIGH"
+                else ("#FFD740" if trade["confidence"] == "MEDIUM"
+                      else "#888888")
+            )
+            with col:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div style="font-size:11px; color:#888; margin-bottom:6px;">{title}</div>
+                    <div style="text-align:center; margin-bottom:10px;">
+                        <span class="score-pill"
+                              style="background:{badge_color}33; color:{badge_color};
+                                     border:2px solid {badge_color}; font-size:14px; padding:4px 16px;">
+                            {d}
+                        </span>
+                    </div>
+                    <div class="metric-label" style="margin-bottom:6px;">{trade['setup_name']}</div>
+                    <div style="font-size:12px; color:#FAFAFA; line-height:1.8;">
+                        <b>Entry:</b> &nbsp;${_fmt(trade['entry'], 1)}<br>
+                        <b>Stop: </b> &nbsp;${_fmt(trade['stop'],  1)}<br>
+                        <b>TP1:  </b> &nbsp;${_fmt(trade['target1'], 1)}
+                            <span style="color:#888; font-size:11px;">&nbsp;(R:R {_fmt(trade['rr1'], 2)})</span><br>
+                        <b>TP2:  </b> &nbsp;${_fmt(trade['target2'], 1)}
+                            <span style="color:#888; font-size:11px;">&nbsp;(R:R {_fmt(trade['rr2'], 2)})</span>
+                    </div>
+                    <div style="margin:8px 0 4px; font-size:11px;">
+                        Confidence: <span style="color:{conf_color}; font-weight:700;">{trade['confidence']}</span>
+                        &nbsp;|&nbsp; TF: <span style="color:#888;">{trade['timeframe']}</span>
+                    </div>
+                    <div style="font-size:11px; color:#aaa; line-height:1.5; border-top:1px solid #2A2D35; padding-top:6px;">
+                        {trade['rationale']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                if trade.get("key_levels_used"):
+                    st.caption("📌 " + " · ".join(trade["key_levels_used"]))
+
+        # ── ICT Chart ─────────────────────────────────────────────────
+        fig_ict = charts.chart_ict_levels(
+            daily_df=daily_df_ict,
+            weekly_df=weekly_df_ict,
+            trades=ict_trades,
+            key_levels=ict_key_levels,
+            fvgs=all_fvgs,
+            obs=all_obs,
+            fib=ict_fib,
+        )
+        st.plotly_chart(fig_ict, use_container_width=True, config={"displayModeBar": False})
 
     # ════════════════════════════════════════════════════════════════════
     # FOOTER

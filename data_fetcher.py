@@ -218,6 +218,72 @@ def fetch_cot_gold(years: int = config.COT_HISTORICAL_YEARS) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# ICT-specific fetchers (daily, weekly OHLCV, monthly for gold only)
+# ---------------------------------------------------------------------------
+
+def _flatten_ohlcv(raw: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex columns from yfinance single-ticker downloads."""
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+    needed = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in raw.columns]
+    df = raw[needed].dropna(subset=["Close"])
+    df.index = pd.to_datetime(df.index).tz_localize(None)
+    return df
+
+
+def fetch_weekly_gold_ohlcv(years: int = config.PRICE_HISTORY_YEARS) -> pd.DataFrame:
+    """
+    Full OHLCV for GC=F at weekly resolution.
+    The existing fetch_weekly_prices() only keeps Close for all tickers.
+    ICT analysis needs Open/High/Low/Close for swing detection, FVG, OB.
+    """
+    start = _years_ago(years)
+    try:
+        raw = yf.download(
+            "GC=F",
+            start=start,
+            interval="1wk",
+            auto_adjust=True,
+            progress=False,
+        )
+        return _flatten_ohlcv(raw)
+    except Exception:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+
+def fetch_monthly_prices(years: int = config.ICT_MONTHLY_YEARS) -> pd.DataFrame:
+    """Monthly OHLCV for GC=F over the last `years` years (for ICT structure)."""
+    start = _years_ago(years)
+    try:
+        raw = yf.download(
+            "GC=F",
+            start=start,
+            interval="1mo",
+            auto_adjust=True,
+            progress=False,
+        )
+        return _flatten_ohlcv(raw)
+    except Exception:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+
+def fetch_daily_prices(days: int = config.ICT_DAILY_DAYS) -> pd.DataFrame:
+    """Daily OHLCV for GC=F over the last `days` calendar days (for ICT entry charts)."""
+    start = (datetime.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        raw = yf.download(
+            "GC=F",
+            start=start,
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+        )
+        return _flatten_ohlcv(raw)
+    except Exception:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+
+# ---------------------------------------------------------------------------
 # Aggregate fetch — single call that returns everything
 # ---------------------------------------------------------------------------
 
@@ -225,22 +291,31 @@ def fetch_all_data(fred_key: str = "") -> dict:
     """
     Master fetcher. Returns:
     {
-        "prices":   dict of weekly OHLCV DataFrames keyed by config name,
-        "etf_shares": dict of current shares outstanding,
-        "fred":     dict of FRED Series,
-        "cot":      DataFrame of weekly gold COT data,
-        "fetched_at": datetime
+        "prices":       dict of weekly Close DataFrames keyed by config name,
+        "etf_shares":   dict of current shares outstanding,
+        "fred":         dict of FRED Series,
+        "cot":          DataFrame of weekly gold COT data,
+        "weekly_gold":  pd.DataFrame OHLCV at weekly interval (for ICT),
+        "monthly_gold": pd.DataFrame OHLCV at monthly interval (for ICT),
+        "daily_gold":   pd.DataFrame OHLCV at daily interval (for ICT chart),
+        "fetched_at":   datetime
     }
     """
-    prices = fetch_weekly_prices()
-    etf_shares = fetch_etf_shares_outstanding()
-    fred = fetch_fred_series(api_key=fred_key)
-    cot = fetch_cot_gold()
+    prices       = fetch_weekly_prices()
+    etf_shares   = fetch_etf_shares_outstanding()
+    fred         = fetch_fred_series(api_key=fred_key)
+    cot          = fetch_cot_gold()
+    weekly_gold  = fetch_weekly_gold_ohlcv()
+    monthly_gold = fetch_monthly_prices()
+    daily_gold   = fetch_daily_prices()
 
     return {
-        "prices":     prices,
-        "etf_shares": etf_shares,
-        "fred":       fred,
-        "cot":        cot,
-        "fetched_at": datetime.now(),
+        "prices":       prices,
+        "etf_shares":   etf_shares,
+        "fred":         fred,
+        "cot":          cot,
+        "weekly_gold":  weekly_gold,
+        "monthly_gold": monthly_gold,
+        "daily_gold":   daily_gold,
+        "fetched_at":   datetime.now(),
     }

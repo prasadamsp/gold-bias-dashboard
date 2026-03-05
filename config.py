@@ -136,3 +136,17 @@ BIAS_LEVELS = [
 # Data history (for charts and calculations)
 # ---------------------------------------------------------------------------
 PRICE_HISTORY_YEARS = 5    # years of weekly price data to fetch
+
+# ---------------------------------------------------------------------------
+# ICT Analysis parameters
+# ---------------------------------------------------------------------------
+ICT_MONTHLY_YEARS     = 10    # years of monthly OHLCV to fetch
+ICT_DAILY_DAYS        = 90    # calendar days of daily OHLCV to fetch
+ICT_SWING_ORDER       = 3     # bars each side to confirm a swing point (fractal)
+ICT_FVG_LOOKBACK      = 20    # candles back to scan for Fair Value Gaps
+ICT_OB_LOOKBACK       = 20    # candles back to scan for Order Blocks
+ICT_OB_MIN_IMPULSE    = 0.5   # % move that qualifies as an impulse after an OB
+ICT_FIB_LEVELS        = [0.236, 0.382, 0.5, 0.618, 0.705, 0.786]
+ICT_OTE_LOW           = 0.618  # Optimal Trade Entry zone lower bound (golden ratio)
+ICT_OTE_HIGH          = 0.705  # Optimal Trade Entry zone upper bound (ICT-specific)
+ICT_PREMIUM_THRESHOLD = 0.5   # above this fib level = premium, below = discount
