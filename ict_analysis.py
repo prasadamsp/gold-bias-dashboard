@@ -450,10 +450,18 @@ def generate_ict_trades(monthly_df: pd.DataFrame,
         monthly_structure = detect_market_structure(monthly_df)
         weekly_structure  = detect_market_structure(weekly_df)
         key_levels        = get_key_levels(monthly_df, weekly_df)
-        sh, sl, swing_dir = _find_major_swing(weekly_df, lookback_bars=60)
-        fib               = calc_fibonacci_levels(sh, sl)
         current_price     = float(daily_df["Close"].iloc[-1])
-        fifty_pct         = fib.get(0.5)
+
+        # Use DAILY swing for fibonacci so OTE zone stays near current price.
+        # 30-day window captures the most recent local swing rather than the
+        # macro multi-year move which would put OTE far from current price.
+        sh, sl, swing_dir = _find_major_swing(daily_df, lookback_bars=30)
+        # Fallback: if daily range is too tight (<1%), widen to 60 daily bars
+        if sh - sl < current_price * 0.01:
+            sh, sl, swing_dir = _find_major_swing(daily_df, lookback_bars=60)
+
+        fib       = calc_fibonacci_levels(sh, sl)
+        fifty_pct = fib.get(0.5)
 
         weekly_obs  = [o for o in find_order_blocks(weekly_df) if o["valid"]]
         daily_obs   = [o for o in find_order_blocks(daily_df)  if o["valid"]]
@@ -486,28 +494,36 @@ def generate_ict_trades(monthly_df: pd.DataFrame,
         }
 
         if overall_bias == "bullish":
-            # Find nearest valid bullish OB at or within 2% below current price
-            candidates = [o for o in (weekly_obs + daily_obs)
-                          if o["direction"] == "bullish"
-                          and o["high"] <= current_price * 1.02]
+            # Find nearest valid bullish OB within 8% of current price.
+            # Sort by proximity (closest high to current price first).
+            candidates = sorted(
+                [o for o in (daily_obs + weekly_obs)
+                 if o["direction"] == "bullish"
+                 and o["high"] <= current_price * 1.03   # at or just above
+                 and o["high"] >= current_price * 0.92], # within 8% below
+                key=lambda o: abs(o["high"] - current_price),
+            )
             ob_used = candidates[0] if candidates else None
 
             if ob_used:
                 ob_range = ob_used["high"] - ob_used["low"]
                 entry  = round((ob_used["high"] + ob_used["low"]) / 2, 1)
-                stop   = round(ob_used["low"] - ob_range * 0.5, 1)
+                stop   = round(ob_used["low"] - max(ob_range * 0.5, current_price * 0.003), 1)
                 conf   = "HIGH" if abs(bias_score) > 0.3 else "MEDIUM"
                 levels = [f"Bullish OB ${ob_used['low']:.1f}–${ob_used['high']:.1f}"]
             else:
-                # Fallback: enter at market, stop at 0.618 fib
+                # Fallback: use PWL as support; entry at current price
+                pwl = key_levels.get("PWL") or key_levels.get("CWL")
                 entry  = round(current_price, 1)
-                stop   = round(fib.get(0.618, current_price * 0.98), 1) if fib else round(current_price * 0.98, 1)
-                conf   = "LOW"
-                levels = ["No OB found — fib 0.618 stop"]
+                stop   = round(pwl * 0.998, 1) if pwl else round(current_price * 0.985, 1)
+                conf   = "MEDIUM"
+                levels = [f"No nearby OB — stop below PWL ${stop:.1f}"]
 
-            tp1_candidates = [v for v in [key_levels.get("PWH"), key_levels.get("CMH")] if v]
-            tp1 = round(min(tp1_candidates, key=lambda x: abs(x - current_price)), 1) if tp1_candidates else None
-            tp2_candidates = [v for v in [key_levels.get("PMH"), sh] if v]
+            tp1_candidates = [v for v in [key_levels.get("PWH"), key_levels.get("CMH")] if v
+                              and v > current_price]
+            tp1 = round(min(tp1_candidates), 1) if tp1_candidates else None
+            # TP2: use PMH if it's above current price, else recent swing high
+            tp2_candidates = [v for v in [key_levels.get("PMH"), sh] if v and v > current_price]
             tp2 = round(max(tp2_candidates), 1) if tp2_candidates else None
 
             if tp1: levels.append(f"TP1 = PWH/CMH ${tp1:.1f}")
@@ -535,26 +551,32 @@ def generate_ict_trades(monthly_df: pd.DataFrame,
             }
 
         elif overall_bias == "bearish":
-            candidates = [o for o in (weekly_obs + daily_obs)
-                          if o["direction"] == "bearish"
-                          and o["low"] >= current_price * 0.98]
+            candidates = sorted(
+                [o for o in (daily_obs + weekly_obs)
+                 if o["direction"] == "bearish"
+                 and o["low"] >= current_price * 0.97   # at or just below
+                 and o["low"] <= current_price * 1.08], # within 8% above
+                key=lambda o: abs(o["low"] - current_price),
+            )
             ob_used = candidates[0] if candidates else None
 
             if ob_used:
                 ob_range = ob_used["high"] - ob_used["low"]
                 entry  = round((ob_used["high"] + ob_used["low"]) / 2, 1)
-                stop   = round(ob_used["high"] + ob_range * 0.5, 1)
+                stop   = round(ob_used["high"] + max(ob_range * 0.5, current_price * 0.003), 1)
                 conf   = "HIGH" if abs(bias_score) > 0.3 else "MEDIUM"
                 levels = [f"Bearish OB ${ob_used['low']:.1f}–${ob_used['high']:.1f}"]
             else:
+                pwh = key_levels.get("PWH") or key_levels.get("CWH")
                 entry  = round(current_price, 1)
-                stop   = round(fib.get(0.618, current_price * 1.02), 1) if fib else round(current_price * 1.02, 1)
-                conf   = "LOW"
-                levels = ["No OB found — fib 0.618 stop"]
+                stop   = round(pwh * 1.002, 1) if pwh else round(current_price * 1.015, 1)
+                conf   = "MEDIUM"
+                levels = [f"No nearby OB — stop above PWH ${stop:.1f}"]
 
-            tp1_cands = [v for v in [key_levels.get("PWL"), key_levels.get("CML")] if v]
-            tp1 = round(min(tp1_cands), 1) if tp1_cands else None
-            tp2_cands = [v for v in [key_levels.get("PML"), sl] if v]
+            tp1_cands = [v for v in [key_levels.get("PWL"), key_levels.get("CML")] if v
+                         and v < current_price]
+            tp1 = round(max(tp1_cands), 1) if tp1_cands else None
+            tp2_cands = [v for v in [key_levels.get("PML"), sl] if v and v < current_price]
             tp2 = round(min(tp2_cands), 1) if tp2_cands else None
 
             if tp1: levels.append(f"TP1 = PWL/CML ${tp1:.1f}")
@@ -777,10 +799,10 @@ def generate_ict_trades(monthly_df: pd.DataFrame,
                 return _wait_trade(3, "No liquidity level found for hunt setup.")
             liq_target = min(liq_targets)   # deepest low = most likely sweep target
 
-            if current_price <= liq_target * 1.01:
+            if current_price <= liq_target:
                 return _wait_trade(3, (
-                    f"Price ${current_price:.1f} already at/below liquidity level ${liq_target:.1f}. "
-                    "Sweep may have occurred — wait for confirmation."
+                    f"Price ${current_price:.1f} already swept through liquidity ${liq_target:.1f}. "
+                    "Hunt may have completed — wait for next setup."
                 ))
 
             entry  = round(current_price, 1)

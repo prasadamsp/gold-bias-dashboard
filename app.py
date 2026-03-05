@@ -494,7 +494,9 @@ def main():
             ict_trades     = ict_analysis.generate_ict_trades(
                 monthly_df_ict, weekly_df_ict, daily_df_ict, bias["score"])
             ict_key_levels = ict_analysis.get_key_levels(monthly_df_ict, weekly_df_ict)
-            sh, sl, _      = ict_analysis._find_major_swing(weekly_df_ict)
+            sh, sl, _      = ict_analysis._find_major_swing(daily_df_ict, lookback_bars=30)
+            if sh - sl < float(daily_df_ict["Close"].iloc[-1]) * 0.01:
+                sh, sl, _ = ict_analysis._find_major_swing(daily_df_ict, lookback_bars=60)
             ict_fib        = ict_analysis.calc_fibonacci_levels(sh, sl)
             all_fvgs       = (
                 [f for f in ict_analysis.find_fvgs(weekly_df_ict) if not f["filled"]] +
